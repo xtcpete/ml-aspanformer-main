@@ -66,11 +66,20 @@ class MegaDepthDataset(Dataset):
 
     def __getitem__(self, idx):
         (idx0, idx1), overlap_score, central_matches = self.pair_infos[idx]
+        
+        img_name0 = self.scene_info['image_paths'][idx0]
+        img_name1 = self.scene_info['image_paths'][idx1]
+
+        depth_path0 = self.scene_info['depth_paths'][idx0]
+        depth_path1 = self.scene_info['depth_paths'][idx1]
+
+        img_name0, depth_name0 = get_new_path(img_name0, depth_path=depth_path0, mode = self.mode)
+        img_name1, depth_name1 = get_new_path(img_name1, depth_path=depth_path1, mode = self.mode)
 
         # read grayscale image and mask. (1, h, w) and (h, w)
-        img_name0 = osp.join(self.root_dir, self.scene_info['image_paths'][idx0])
-        img_name1 = osp.join(self.root_dir, self.scene_info['image_paths'][idx1])
-        
+        img_name0 = osp.join(self.root_dir, img_name0)
+        img_name1 = osp.join(self.root_dir, img_name1)
+	
         # TODO: Support augmentation & handle seeds for each worker correctly.
         image0, mask0, scale0 = read_megadepth_gray(
             img_name0, self.img_resize, self.df, self.img_padding, None)
@@ -82,16 +91,12 @@ class MegaDepthDataset(Dataset):
         # read depth. shape: (h, w)
         if self.mode in ['train', 'val']:
             depth0 = read_megadepth_depth(
-                osp.join(self.root_dir, self.scene_info['depth_paths'][idx0]), pad_to=self.depth_max_size)
+                osp.join(self.root_dir, depth_name0), pad_to=self.depth_max_size)
             depth1 = read_megadepth_depth(
-                osp.join(self.root_dir, self.scene_info['depth_paths'][idx1]), pad_to=self.depth_max_size)
+                osp.join(self.root_dir, depth_name0), pad_to=self.depth_max_size)
         else:
+            depth0 = depth1 = torch.tensor([])
             
-            depth0 = read_megadepth_depth(
-                osp.join(self.root_dir, 'Undistorted_SfM/' + '/'.join(self.scene_info['depth_paths'][idx0].split('/')[4:])), pad_to=self.depth_max_size)
-            depth1 = read_megadepth_depth(
-                osp.join(self.root_dir, 'Undistorted_SfM/' + '/'.join(self.scene_info['depth_paths'][idx1].split('/')[4:])), pad_to=self.depth_max_size)
-
         # read intrinsics of original size
         K_0 = torch.tensor(self.scene_info['intrinsics'][idx0].copy(), dtype=torch.float).reshape(3, 3)
         K_1 = torch.tensor(self.scene_info['intrinsics'][idx1].copy(), dtype=torch.float).reshape(3, 3)
@@ -131,3 +136,15 @@ class MegaDepthDataset(Dataset):
             data.update({'mask0': ts_mask_0, 'mask1': ts_mask_1})
 
         return data
+    
+def get_new_path(img_path, depth_path, mode = 'train'):
+    if mode == 'train' or mode =='val':
+        splitted = depth_path.split('/')
+        root = '/'.join(splitted[:-2])
+        new_img_path = root + '/imgs/' + img_path.split('/')[-1]
+        return new_img_path, '/'.join(splitted)
+    elif mode == 'test':
+        new_img_path = img_path
+        return new_img_path, None
+    else:
+        raise NotImplementedError

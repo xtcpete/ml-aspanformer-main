@@ -8,7 +8,7 @@ from os import path as osp
 from pathlib import Path
 from joblib import Parallel, delayed
 import numpy as np
-from datasets.data_module import AWSDataset
+from src.datasets.data_module import AWSDataset
 import pytorch_lightning as pl
 from torch import distributed as dist
 from torch.utils.data import (
@@ -240,10 +240,10 @@ class MultiSceneDataModule(pl.LightningDataModule):
             else:
                 raise NotImplementedError()
             
-            data_dir = data_root + '/synthetic'
+            data_dir = self.train_data_root + '/synthetic'
             # add synthetic dataset to
             if mode == 'train':
-                for i in range(20):
+                for i in range(1):
                     datasets.append(
                         AWSDataset(data_dir, f'train_index_{i}.txt', self.config)
                     )

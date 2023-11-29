@@ -12,13 +12,14 @@ data_cfg_path="configs/data/megadepth_trainval_${TRAIN_IMG_SIZE}.py"
 main_cfg_path="configs/aspan/outdoor/aspan_train.py"
 
 n_nodes=1
-n_gpus_per_node=8
+n_gpus_per_node=4
 torch_num_workers=8
 batch_size=1
 pin_memory=true
 exp_name="outdoor-ds-aspan-${TRAIN_IMG_SIZE}-bs=$(($n_gpus_per_node * $n_nodes * $batch_size))"
+export NCCL_P2P_DISABLE=1
 
-CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' python -u ./train.py \
+CUDA_VISIBLE_DEVICES='0,1,2,3,4' python -u ./train.py \
     ${data_cfg_path} \
     ${main_cfg_path} \
     --exp_name=${exp_name} \
@@ -32,3 +33,4 @@ CUDA_VISIBLE_DEVICES='0,1,2,3,4,5,6,7' python -u ./train.py \
     --benchmark=True \
     --max_epochs=30 \
     --mode integrated
+    --ckpt_path ./weights/outdoor.ckpt

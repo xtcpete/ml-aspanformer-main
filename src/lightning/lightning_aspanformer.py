@@ -13,16 +13,15 @@ from src.ASpanFormer.aspanformer import ASpanFormer
 from src.ASpanFormer.utils.supervision import compute_supervision_coarse, compute_supervision_fine
 from src.losses.aspan_loss import ASpanLoss
 from src.optimizers import build_optimizer, build_scheduler
-from src.utils.metrics_original import (
+from src.utils.metrics import (
     compute_symmetrical_epipolar_errors,compute_symmetrical_epipolar_errors_offset_bidirectional,
     compute_pose_errors,
     aggregate_metrics
 )
-from src.utils.plotting import make_matching_figures
+from src.utils.plotting import make_matching_figures,make_matching_figures_offset
 from src.utils.comm import gather, all_gather
 from src.utils.misc import lower_config, flattenList
 from src.utils.profiler import PassThroughProfiler
-from src.utils.plotting import _make_evaluation_figure
 
 
 class PL_ASpanFormer(pl.LightningModule):
@@ -231,9 +230,6 @@ class PL_ASpanFormer(pl.LightningModule):
             self.log(f'auc@{thr}', torch.tensor(np.mean(multi_val_metrics[f'auc@{thr}'])))  # ckpt monitors on this
 
     def test_step(self, batch, batch_idx):
-
-        # compute_supervision_coarse(batch, self.config)
-
         with self.profiler.profile("LoFTR"):
             self.matcher(batch)
 
@@ -257,8 +253,7 @@ class PL_ASpanFormer(pl.LightningModule):
                         item[key] = batch[key][b_id]
                     dumps.append(item)
                 ret_dict['dumps'] = dumps
-        # figure = _make_evaluation_figure(batch, 0, alpha='dynamic')
-        # plt.savefig(f'./evaluation_results/{batch_idx}.png')
+
         return ret_dict
 
     def test_epoch_end(self, outputs):

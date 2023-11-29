@@ -119,7 +119,7 @@ _CN.TRAINER.FIND_LR = False  # use learning rate finder from pytorch-lightning
 
 # optimizer
 _CN.TRAINER.OPTIMIZER = "adamw"  # [adam, adamw]
-_CN.TRAINER.TRUE_LR = None  # this will be calculated automatically at runtime
+_CN.TRAINER.TRUE_LR = 0.00005  # this will be calculated automatically at runtime
 _CN.TRAINER.ADAM_DECAY = 0.  # ADAM: for adam
 _CN.TRAINER.ADAMW_DECAY = 0.1
 

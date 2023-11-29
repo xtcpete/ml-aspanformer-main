@@ -65,15 +65,15 @@ class AWSDataset(Dataset):
         super().__init__()
 
         if type(config) == dict:
-            self.coarse_scale = 1 / config['resolution'][0] if config is not None else 1/8
+            self.coarse_scale = 1 / 8 if config is not None else 1/8
         else:
-            self.coarse_scale = 1 / config.RESOLUTION[0] if config is not None else 1/8
+            self.coarse_scale = 1 / 8 if config is not None else 1/8
         
 
         self.pair_count = 0
 
         self.data_dir = data_dir # data
-        self.index_path = index_path # data/train_index.txt
+        self.index_path = f"{self.data_dir}/{index_path}" # data/train_index.txt
 
         with open(self.index_path, 'r') as file:
             self.pairs = [line.strip().split(',') for line in file]
@@ -112,10 +112,10 @@ class AWSDataset(Dataset):
             'depth0': d0,     # (h, w)
             'image1': image1,
             'depth1': d1,
-            'T_0to1': T_0to1, # (4, 4)
-            'T_1to0': T_1to0,
-            'K0': k0,         # (3, 3)
-            'K1': k1,
+            'T_0to1': T_0to1.float(), # (4, 4)
+            'T_1to0': T_1to0.float(),
+            'K0': k0.float(),         # (3, 3)
+            'K1': k1.float(),
             'scale0': scale0, # [scale_w, scale_h]
             'scale1': scale1,
             'scale_wh0': scale_wh0,
@@ -124,7 +124,8 @@ class AWSDataset(Dataset):
             'scale_wh1': scale_wh1,
             'scene_id': -1,
             'pair_id': -1,
-            'pairs_name': self.pairs[idx]
+            'pair_names': self.pairs[idx],
+            'dataset_name': 'MegaDepth'
         }
     
     

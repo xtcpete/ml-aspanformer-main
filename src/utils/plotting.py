@@ -2,61 +2,13 @@ import bisect
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
-import cv2
-import torch
-
-def getImageSize(path):
-    cv_type = cv2.IMREAD_GRAYSCALE
-    image = cv2.imread(str(path), cv_type) # (h, w)
-
-    w, h = image.shape[1], image.shape[0]
-
-    return [h, w]
-
-def get_resized_wh(w, h, resize=None):
-    if resize is not None:  # resize the longer edge
-        scale = resize / max(h, w) # 840 / 1920 = 0.4375
-        w_new, h_new = int(round(w*scale)), int(round(h*scale)) # 840, 472
-    else:
-        w_new, h_new = w, h
-    return w_new, h_new
-
-def get_divisible_wh(w, h, df=None):
-    if df is not None:
-        w_new, h_new = map(lambda x: int(x // df * df), [w, h])
-    else:
-        w_new, h_new = w, h
-    return w_new, h_new
-
-def load_color_image(path, resize=None, df=None, padding=None):
-    image = cv2.imread(path, cv2.IMREAD_COLOR)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) # [h, w 3]
-
-    w, h = image.shape[1], image.shape[0]
-    w_new, h_new = get_resized_wh(w, h, resize)
-    w_new, h_new = get_divisible_wh(w_new, h_new, df)
-
-    image = cv2.resize(image, (w_new, h_new)) # [h, w, 3]
-
-    if padding:  # padding
-        pad_to = max(h_new, w_new) # pad to 840
-        padded = np.zeros((3, pad_to, pad_to), dtype=image.dtype)
-        image = image.transpose(2, 0, 1) #[3, h, w]
-        padded[:, :image.shape[1], :image.shape[2]] = image
-        image = padded # [3, h, w]
-    else:
-        image = image.transpose(2, 0, 1)
-
-    image_tensor = torch.from_numpy(image).float() / 255
-    image = image.transpose(1, 2, 0) # [h, w, 3]
-
-    return image, image_tensor
+from copy import deepcopy
 
 def _compute_conf_thresh(data):
     dataset_name = data['dataset_name'][0].lower()
     if dataset_name == 'scannet':
         thr = 5e-4
-    elif dataset_name == 'megadepth':
+    elif dataset_name == 'megadepth' or dataset_name=='gl3d':
         thr = 1e-4
     else:
         raise ValueError(f'Unknown dataset: {dataset_name}')
@@ -113,26 +65,19 @@ def make_matching_figure(
         return fig
 
 
-def _make_evaluation_figure(data, b_id, alpha='dynamic', color = True):
-
+def _make_evaluation_figure(data, b_id, alpha='dynamic'):
     b_mask = data['m_bids'] == b_id
-    conf_thr = _compute_conf_thresh(data)    
+    conf_thr = _compute_conf_thresh(data)
+    
+    img0 = (data['image0'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
+    img1 = (data['image1'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
     kpts0 = data['mkpts0_f'][b_mask].cpu().numpy()
     kpts1 = data['mkpts1_f'][b_mask].cpu().numpy()
-    if color:
-        img0_path = data['image0_path'][b_id]
-        img1_path = data['image1_path'][b_id]
-        img0, _ = load_color_image(img0_path)
-        img1, _ = load_color_image(img1_path)
-    else:
-        img0 = (data['image0'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
-        img1 = (data['image1'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
     
-        # for megadepth, we visualize matches on the resized image
-        if 'scale0' in data:
-            kpts0 = kpts0 / data['scale0'][b_id].cpu().numpy()[[1, 0]]
-            kpts1 = kpts1 / data['scale1'][b_id].cpu().numpy()[[1, 0]]
-
+    # for megadepth, we visualize matches on the resized image
+    if 'scale0' in data:
+        kpts0 = kpts0 / data['scale0'][b_id].cpu().numpy()[[1, 0]]
+        kpts1 = kpts1 / data['scale1'][b_id].cpu().numpy()[[1, 0]]
     epi_errs = data['epi_errs'][b_mask].cpu().numpy()
     correct_mask = epi_errs < conf_thr
     precision = np.mean(correct_mask) if len(correct_mask) > 0 else 0
@@ -148,7 +93,6 @@ def _make_evaluation_figure(data, b_id, alpha='dynamic', color = True):
     color = error_colormap(epi_errs, conf_thr, alpha=alpha)
     
     text = [
-        'Ours+ASpanFormer',
         f'#Matches {len(kpts0)}',
         f'Precision({conf_thr:.2e}) ({100 * precision:.1f}%): {n_correct}/{len(kpts0)}',
         f'Recall({conf_thr:.2e}) ({100 * recall:.1f}%): {n_correct}/{n_gt_matches}'
@@ -157,6 +101,50 @@ def _make_evaluation_figure(data, b_id, alpha='dynamic', color = True):
     # make the figure
     figure = make_matching_figure(img0, img1, kpts0, kpts1,
                                   color, text=text)
+    return figure
+
+def _make_evaluation_figure_offset(data, b_id, alpha='dynamic',side=''):
+    layer_num=data['predict_flow'][0].shape[0]
+
+    b_mask = data['offset_bids'+side] == b_id
+    conf_thr = 2e-3 #hardcode for scannet(coarse level)
+    img0 = (data['image0'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
+    img1 = (data['image1'][b_id][0].cpu().numpy() * 255).round().astype(np.int32)
+    
+    figure_list=[]
+    #draw offset matches in different layers
+    for layer_index in range(layer_num):
+        l_mask=data['offset_lids'+side]==layer_index
+        mask=l_mask&b_mask
+        kpts0 = data['offset_kpts0_f'+side][mask].cpu().numpy()
+        kpts1 = data['offset_kpts1_f'+side][mask].cpu().numpy()
+        
+        epi_errs = data['epi_errs_offset'+side][mask].cpu().numpy()
+        correct_mask = epi_errs < conf_thr
+        
+        precision = np.mean(correct_mask) if len(correct_mask) > 0 else 0
+        n_correct = np.sum(correct_mask)
+        n_gt_matches = int(data['conf_matrix_gt'][b_id].sum().cpu())
+        recall = 0 if n_gt_matches == 0 else n_correct / (n_gt_matches)
+        # recall might be larger than 1, since the calculation of conf_matrix_gt
+        # uses groundtruth depths and camera poses, but epipolar distance is used here.
+
+        # matching info
+        if alpha == 'dynamic':
+            alpha = dynamic_alpha(len(correct_mask))
+        color = error_colormap(epi_errs, conf_thr, alpha=alpha)
+        
+        text = [
+            f'#Matches {len(kpts0)}',
+            f'Precision({conf_thr:.2e}) ({100 * precision:.1f}%): {n_correct}/{len(kpts0)}',
+            f'Recall({conf_thr:.2e}) ({100 * recall:.1f}%): {n_correct}/{n_gt_matches}'
+        ]
+        
+        # make the figure
+        #import pdb;pdb.set_trace()
+        figure = make_matching_figure(deepcopy(img0), deepcopy(img1) , kpts0, kpts1,
+                                    color, text=text)
+        figure_list.append(figure)
     return figure
 
 def _make_confidence_figure(data, b_id):
@@ -184,9 +172,31 @@ def make_matching_figures(data, config, mode='evaluation'):
             fig = _make_confidence_figure(data, b_id)
         else:
             raise ValueError(f'Unknown plot mode: {mode}')
-        figures[mode].append(fig)
+    figures[mode].append(fig)
     return figures
 
+def make_matching_figures_offset(data, config, mode='evaluation',side=''):
+    """ Make matching figures for a batch.
+    
+    Args:
+        data (Dict): a batch updated by PL_LoFTR.
+        config (Dict): matcher config
+    Returns:
+        figures (Dict[str, List[plt.figure]]
+    """
+    assert mode in ['evaluation', 'confidence']  # 'confidence'
+    figures = {mode: []}
+    for b_id in range(data['image0'].size(0)):
+        if mode == 'evaluation':
+            fig = _make_evaluation_figure_offset(
+                data, b_id,
+                alpha=config.TRAINER.PLOT_MATCHES_ALPHA,side=side)
+        elif mode == 'confidence':
+            fig = _make_evaluation_figure_offset(data, b_id)
+        else:
+            raise ValueError(f'Unknown plot mode: {mode}')
+        figures[mode].append(fig)
+    return figures
 
 def dynamic_alpha(n_matches,
                   milestones=[0, 300, 1000, 2000],
